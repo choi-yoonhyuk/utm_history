@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>시트 내용 보기</title> <style>
+        body { font-family: sans-serif; margin: 20px; font-size: 14px; }
+        .button-container { margin-bottom: 20px; text-align: right; } 
+        .button-container button { padding: 8px 15px; font-size: 0.9em; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 5px; }
+        .button-container button:hover { background-color: #0056b3; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; vertical-align: top; word-wrap: break-word; }
+        th { background-color: #f0f0f0; position: sticky; top: 0; z-index: 1;}
+        h1 { margin-top: 0; }
+        #loadingStatus { font-style: italic; color: #777; margin-bottom: 15px; }
+        #tableContainerWrapper { max-height: 70vh; overflow-y: auto; border: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+    <div class="button-container">
+        <button onclick="location.href='https://choi-yoonhyuk.github.io/utm_key_value/'">UTM 빌더로 이동</button> 
+    </div>
+
+    <h1>시트 내용 보기</h1> <p id="loadingStatus">데이터 로딩 중...</p>
+    <div id="tableContainerWrapper">
+        <div id="optionsTableContainer">
+            </div>
+    </div>
+
+    <script>
+        // 1. 보여주고 싶은 구글 시트의 "웹에 CSV로 게시" URL을 여기에 넣으세요.
+        //    반드시 실제 URL로 교체해야 합니다!
+        const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vShcppno7HuVQbjoQzbaBMEvoBGt6atss9FI_-F3qSh_pzgtxw7A4NPo6Y2EYoll2y5_8wMt08X_oV0/pub?gid=1861589139&single=true&output=history';
+        // 예시: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vYOUR_SHEET_ID/pub?gid=YOUR_GID&single=true&output=csv';
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const loadingStatusEl = document.getElementById('loadingStatus');
+            const tableContainerEl = document.getElementById('optionsTableContainer');
+
+            if (!SHEET_CSV_URL || SHEET_CSV_URL === '여기에_사용자님의_구글_시트_CSV_게시_URL을_넣으세요') {
+                loadingStatusEl.textContent = "오류: 구글 시트 CSV URL이 설정되지 않았습니다. 스크립트에서 SHEET_CSV_URL 변수를 수정해주세요.";
+                loadingStatusEl.style.color = "red";
+                return;
+            }
+            
+            try {
+                loadingStatusEl.textContent = "시트 내용 로딩 중...";
+                const response = await fetch(SHEET_CSV_URL, {
+                    cache: 'no-cache' // 브라우저 캐시를 사용하지 않도록 지시 (구글 서버 캐시는 별개)
+                }); 
+
+                if (!response.ok) {
+                    throw new Error(`시트 CSV 로드 실패 (상태 코드: ${response.status})`);
+                }
+
+                const csvDataText = await response.text(); 
+                
+                if (!csvDataText.trim()) { 
+                    loadingStatusEl.textContent = "시트 데이터가 비어있거나 가져올 수 없습니다.";
+                    tableContainerEl.innerHTML = '<p>표시할 데이터가 없습니다.</p>';
+                    return;
+                }
+
+                // CSV 데이터를 기반으로 HTML 테이블을 생성하는 함수 (이전 답변의 정리된 버전 사용)
+                const tableElement = createOrganizedTableFromCsv(csvDataText); 
+                tableContainerEl.innerHTML = ''; 
+                tableContainerEl.appendChild(tableElement); 
+                loadingStatusEl.style.display = 'none'; 
+
+            } catch (error) {
+                console.error("시트 내용 로딩 또는 표시 오류:", error);
+                loadingStatusEl.textContent = `오류: ${error.message}`;
+                loadingStatusEl.style.color = "red";
+                tableContainerEl.innerHTML = '<p>시트 내용을 불러오는 데 실패했습니다. 개발자 콘솔(F12)을 확인해주세요.</p>';
+            }
+        });
+
+        // CSV 텍스트를 "정리된" HTML 테이블 요소로 변환하는 함수 (undefined 문자열 처리 포함)
+        function createOrganizedTableFromCsv(csvDataText) {
+            const lines = csvDataText.split(/\r?\n/).filter(line => line.trim() !== ""); 
+            const table = document.createElement('table');
+
+            if (lines.length === 0) {
+                const tr = table.insertRow();
+                const td = tr.insertCell();
+                td.textContent = "표시할 데이터가 없습니다 (CSV 비어있음).";
+                return table;
+            }
+
+            // 첫 번째 줄을 헤더로 사용
+            const headers = lines[0].split(',').map(header => header.trim().replace(/^"|"$/g, ''));
+            const thead = table.createTHead();
+            const headerRow = thead.insertRow();
+            headers.forEach(headerText => {
+                const th = document.createElement('th');
+                th.textContent = headerText;
+                headerRow.appendChild(th);
+            });
+
+            // "옵션 마스터 시트"와 같이 각 열이 카테고리이고 값이 여러 행에 걸쳐있는 경우,
+            // 값들을 모아서 보여주는 로직 (이전 createOrganizedTableFromCsv 함수와 동일)
+            const categoryData = {}; 
+            headers.forEach((header, colIndex) => {
+                categoryData[header] = new Set(); // 각 헤더(카테고리)별로 Set 초기화
+                for (let i = 1; i < lines.length; i++) { // 데이터 행들 순회 (헤더 제외)
+                    const cells = lines[i].split(',').map(cell => cell.trim().replace(/^"|"$/g, ''));
+                    if (cells.length > colIndex && cells[colIndex]) {
+                        const value = String(cells[colIndex]).trim();
+                        // "undefined" 문자열이거나 실제 빈 값은 Set에 추가하지 않음
+                        if (value && value.toLowerCase() !== 'undefined') { 
+                            categoryData[header].add(value);
+                        }
+                    }
+                }
+            });
+
+            let maxDataCount = 0;
+            headers.forEach(header => {
+                if (categoryData[header] && categoryData[header].size > maxDataCount) {
+                    maxDataCount = categoryData[header].size;
+                }
+            });
+            
+            const tbody = table.createTBody();
+            if (maxDataCount === 0) { 
+                const tr = tbody.insertRow();
+                const td = tr.insertCell();
+                td.colSpan = headers.length || 1;
+                td.textContent = "시트에 유효한 데이터가 없습니다."; 
+                td.style.textAlign = "center";
+                return table;
+            }
+
+            for (let i = 0; i < maxDataCount; i++) { 
+                const tr = tbody.insertRow();
+                headers.forEach(header => {
+                    const td = tr.insertCell();
+                    const dataForThisHeaderArray = Array.from(categoryData[header] || new Set()); 
+                    let cellValue = dataForThisHeaderArray[i] || ""; 
+
+                    if (cellValue === undefined || String(cellValue).trim().toLowerCase() === 'undefined') {
+                        td.textContent = ""; 
+                    } else {
+                        td.textContent = String(cellValue).trim(); 
+                    }
+                });
+            }
+            return table;
+        }
+    </script>
+</body>
+</html>

@@ -122,7 +122,15 @@
                         a.textContent = cellValue; 
                         a.target = "_blank"; 
                         td.appendChild(a);
-                    } else {
+                    } else if ((lowerCaseHeader.includes('short_url') || lowerCaseHeader.includes('shortened_url') || lowerCaseHeader.includes('단축url') || lowerCaseHeader.includes('단축 url') || lowerCaseHeader.includes('단축 URL')) && cellValue.startsWith('http')) { // 단축 URL에 대한 조건 추가
+                        const a = document.createElement('a');
+                        a.href = cellValue;
+                        a.textContent = cellValue;
+                        a.target = "_blank";
+                        td.appendChild(a);
+                    }
+                    
+                    else {
                         td.textContent = cellValue; 
                     }
                 });

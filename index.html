@@ -3,15 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>UTM 생성 이력 보기 (링크 추가)</title> 
+    <title>UTM 생성 이력 보기 (삭제 기능 추가)</title> 
     <style>
         body { font-family: sans-serif; margin: 20px; font-size: 14px; }
-        .button-container { margin-bottom: 20px; text-align: right; } 
+        .button-container { margin-bottom: 20px; text-align: right; display: flex; justify-content: flex-end; gap: 10px; } 
         .button-container button { padding: 8px 15px; font-size: 0.9em; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 5px; }
         .button-container button:hover { background-color: #0056b3; }
+        .button-container button.delete-button { background-color: #dc3545; }
+        .button-container button.delete-button:hover { background-color: #c82333; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed; }
         th, td { border: 1px solid #ccc; padding: 8px; text-align: left; vertical-align: top; word-wrap: break-word; }
         th { background-color: #f0f0f0; position: sticky; top: 0; z-index: 1;}
+        th.checkbox-column, td.checkbox-column { width: 60px; text-align: center;} /* 체크박스 열 너비 및 정렬 */
         h1 { margin-top: 0; }
         #loadingStatus { font-style: italic; color: #777; margin-bottom: 15px; }
         #tableContainerWrapper { max-height: 70vh; overflow-y: auto; border: 1px solid #ddd; }
@@ -20,6 +23,7 @@
 <body>
     <div class="button-container">
         <button onclick="location.href='https://choi-yoonhyuk.github.io/source_medium_drop/'">UTM 빌더로 이동</button> 
+        <button id="deleteSelectedButton" class="delete-button">선택 항목 삭제</button> 
     </div>
 
     <h1>UTM 생성 이력</h1> 
@@ -30,17 +34,14 @@
     </div>
 
     <script>
-        // 1. UTM 생성 이력이 담긴 CSV URL
         const HISTORY_DATA_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vShcppno7HuVQbjoQzbaBMEvoBGt6atss9FI_-F3qSh_pzgtxw7A4NPo6Y2EYoll2y5_8wMt08X_oV0/pub?gid=1831366188&single=true&output=csv'; 
-        // 위 URL은 "옵션 마스터 시트" CSV URL로 보입니다. 
-        // 실제 "생성 이력" CSV URL로 교체하시거나, 
-        // 또는 이 시트를 이력처럼 보여주는 것이 목적이라면 그대로 사용하셔도 됩니다.
+        const N8N_DELETE_WEBHOOK_URL = '여기에_n8n_삭제_웹훅_URL을_입력하세요'; // 중요: 실제 n8n 웹훅 URL로 변경!
 
         document.addEventListener('DOMContentLoaded', async () => {
             const loadingStatusEl = document.getElementById('loadingStatus');
             const tableContainerEl = document.getElementById('optionsTableContainer');
 
-            if (!HISTORY_DATA_CSV_URL || HISTORY_DATA_CSV_URL === '여기에_UTM_생성_이력_CSV_게시_URL을_넣으세요') { // 변수명 일치
+            if (!HISTORY_DATA_CSV_URL || HISTORY_DATA_CSV_URL.startsWith('여기에')) {
                 loadingStatusEl.textContent = "오류: 데이터 소스 CSV URL이 설정되지 않았습니다.";
                 loadingStatusEl.style.color = "red";
                 return;
@@ -48,9 +49,7 @@
             
             try {
                 loadingStatusEl.textContent = "생성 이력 로딩 중...";
-                const response = await fetch(HISTORY_DATA_CSV_URL, {
-                    cache: 'no-cache' 
-                }); 
+                const response = await fetch(HISTORY_DATA_CSV_URL, { cache: 'no-cache' }); 
 
                 if (!response.ok) {
                     throw new Error(`생성 이력 CSV 로드 실패 (상태 코드: ${response.status})`);
@@ -77,7 +76,6 @@
             }
         });
 
-        // CSV 텍스트를 HTML 테이블 요소로 단순 변환하는 함수 (URL 하이퍼링크 추가)
         function createSimpleTableFromCsv(csvDataText) {
             const lines = csvDataText.split(/\r?\n/).filter(line => line.trim() !== ""); 
             const table = document.createElement('table');
@@ -89,53 +87,133 @@
                 return table;
             }
 
-            const headers = lines[0].split(',').map(header => header.trim().replace(/^"|"$/g, ''));
+            const rawHeaders = lines[0].split(',').map(header => header.trim().replace(/^"|"$/g, ''));
             const thead = table.createTHead();
             const headerRow = thead.insertRow();
-            headers.forEach(headerText => {
+
+            // 체크박스용 헤더 추가
+            const thCheckbox = document.createElement('th');
+            thCheckbox.textContent = '선택';
+            thCheckbox.className = 'checkbox-column';
+            headerRow.appendChild(thCheckbox);
+
+            rawHeaders.forEach(headerText => {
                 const th = document.createElement('th');
                 th.textContent = headerText;
                 headerRow.appendChild(th);
             });
 
+            // '생성일시' 열의 인덱스 찾기 (행 식별자로 사용하기 위함)
+            // 이 CSV는 UTM 빌더의 이력과 동일한 GID를 사용하므로, '생성일시'가 첫번째 열(인덱스 0)이라고 가정.
+            // 만약 다르다면, 실제 헤더 이름을 기준으로 찾아야 합니다.
+            // const timestampHeaderName = '생성일시'; // 실제 CSV 헤더 이름
+            // const timestampIndex = rawHeaders.findIndex(h => h === timestampHeaderName);
+            // if (timestampIndex === -1) {
+            //     console.error(`'${timestampHeaderName}' 헤더를 CSV에서 찾을 수 없습니다. 행 식별이 불가능합니다.`);
+            //     // 적절한 오류 처리 또는 대체 식별자 로직
+            // }
+            // 여기서는 '생성일시'가 CSV의 첫번째 데이터 열 (인덱스 0)이라고 가정하고 진행합니다.
+            // 실제로는 `timestampIndex`를 사용하여 해당 열의 값을 가져와야 합니다.
+            // 아래 `rowId` 추출 시 `cells[0]` 대신 `cells[timestampIndex]` 사용 권장.
+
             const tbody = table.createTBody();
             for (let i = 1; i < lines.length; i++) {
                 const line = lines[i];
                 const cells = line.split(',').map(cell => cell.replace(/^"|"$/g, '').trim());
+                if (cells.length === 0 || (cells.length === 1 && cells[0] === "")) continue; // 빈 줄 건너뛰기
+
                 const tr = tbody.insertRow();
                 
-                headers.forEach((header, index) => { 
+                // 체크박스 셀 추가
+                const tdCheckbox = tr.insertCell();
+                tdCheckbox.className = 'checkbox-column';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                // '생성일시' 값을 rowId로 사용 (CSV의 첫번째 열이라고 가정)
+                // 만약 '생성일시'가 항상 첫번째 열이 아니라면, 위에서 찾은 timestampIndex를 사용해야 합니다.
+                const rowId = cells.length > 0 ? cells[0] : `row-${i}`; // 생성일시가 없거나 빈 경우 대비
+                checkbox.dataset.rowId = rowId; 
+                tdCheckbox.appendChild(checkbox);
+
+                rawHeaders.forEach((header, index) => { 
                     const td = tr.insertCell();
                     const cellValue = cells[index] !== undefined ? cells[index] : ""; 
                     
                     const lowerCaseHeader = header.toLowerCase();
-                    // 실제 CSV 헤더 이름과 일치하는지 확인하고 필요시 "페이지 URL", "최종 URL" 등의 문자열을 수정하세요.
                     if ((lowerCaseHeader.includes('page_url') || lowerCaseHeader.includes('페이지 url') || lowerCaseHeader.includes('페이지url')) && cellValue.startsWith('http')) {
                         const a = document.createElement('a');
-                        a.href = cellValue;
-                        a.textContent = cellValue; 
-                        a.target = "_blank"; 
-                        td.appendChild(a);
+                        a.href = cellValue; a.textContent = cellValue; a.target = "_blank"; td.appendChild(a);
                     } else if ((lowerCaseHeader.includes('final_url') || lowerCaseHeader.includes('최종 url') || lowerCaseHeader.includes('최종url')) && cellValue.startsWith('http')) {
                         const a = document.createElement('a');
-                        a.href = cellValue;
-                        a.textContent = cellValue; 
-                        a.target = "_blank"; 
-                        td.appendChild(a);
-                    } else if ((lowerCaseHeader.includes('short_url') || lowerCaseHeader.includes('shortened_url') || lowerCaseHeader.includes('단축url') || lowerCaseHeader.includes('단축 url') || lowerCaseHeader.includes('단축 URL')) && cellValue.startsWith('http')) { // 단축 URL에 대한 조건 추가
+                        a.href = cellValue; a.textContent = cellValue; a.target = "_blank"; td.appendChild(a);
+                    } else if ((lowerCaseHeader.includes('short_url') || lowerCaseHeader.includes('shortened_url') || lowerCaseHeader.includes('단축url') || lowerCaseHeader.includes('단축 url') || lowerCaseHeader.includes('단축 URL')) && cellValue.startsWith('http')) {
                         const a = document.createElement('a');
-                        a.href = cellValue;
-                        a.textContent = cellValue;
-                        a.target = "_blank";
-                        td.appendChild(a);
-                    }
-                    
-                    else {
+                        a.href = cellValue; a.textContent = cellValue; a.target = "_blank"; td.appendChild(a);
+                    } else {
                         td.textContent = cellValue; 
                     }
                 });
             }
             return table;
+        }
+
+        // 선택 항목 삭제 버튼 이벤트 리스너
+        const deleteButton = document.getElementById('deleteSelectedButton');
+        if (deleteButton) {
+            deleteButton.addEventListener('click', async () => {
+                if (N8N_DELETE_WEBHOOK_URL === '여기에_n8n_삭제_웹훅_URL을_입력하세요') {
+                    alert('오류: 삭제를 위한 n8n 웹훅 URL이 설정되지 않았습니다.');
+                    return;
+                }
+
+                const selectedIds = [];
+                document.querySelectorAll('#optionsTableContainer tbody input[type="checkbox"]:checked').forEach(checkbox => {
+                    selectedIds.push(checkbox.dataset.rowId);
+                });
+
+                if (selectedIds.length === 0) {
+                    alert('삭제할 항목을 먼저 선택해주세요.');
+                    return;
+                }
+
+                if (!confirm(`선택된 ${selectedIds.length}개 항목을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+                    return;
+                }
+
+                const loadingStatusEl = document.getElementById('loadingStatus');
+                loadingStatusEl.textContent = "선택 항목 삭제 중...";
+                loadingStatusEl.style.display = 'block';
+
+                try {
+                    const response = await fetch(N8N_DELETE_WEBHOOK_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ idsToDelete: selectedIds }) // n8n에서 받을 데이터 형식
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.text();
+                        throw new Error(`삭제 요청 실패 (상태 코드: ${response.status}): ${errorData}`);
+                    }
+
+                    const result = await response.json(); // n8n에서 오는 응답이 JSON이라고 가정
+
+                    if (result.status === 'success') { // n8n 응답에 status 필드가 있다고 가정
+                        alert(`${selectedIds.length}개 항목이 성공적으로 삭제 요청되었습니다.`);
+                    } else {
+                        alert(`삭제 요청 중 일부 문제가 발생했습니다: ${result.message || '알 수 없는 응답'}`);
+                    }
+                } catch (error) {
+                    console.error('삭제 처리 중 오류:', error);
+                    alert(`오류가 발생하여 삭제에 실패했습니다: ${error.message}`);
+                } finally {
+                    loadingStatusEl.textContent = "데이터 로딩 중..."; // 기본 메시지로 변경하거나 숨김
+                    loadingStatusEl.style.display = 'none';
+                    location.reload(); // 작업 후 페이지 새로고침
+                }
+            });
         }
     </script>
 </body>

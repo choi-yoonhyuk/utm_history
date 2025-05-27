@@ -194,18 +194,18 @@
                         body: JSON.stringify({ idsToDelete: selectedIds }) // n8n에서 받을 데이터 형식
                     });
 
-                    if (!response.ok) {
-                        const errorData = await response.text();
-                        throw new Error(`삭제 요청 실패 (상태 코드: ${response.status}): ${errorData}`);
-                    }
+                    // if (!response.ok) {
+                    //     const errorData = await response.text();
+                    //     throw new Error(`삭제 요청 실패 (상태 코드: ${response.status}): ${errorData}`);
+                    // }
 
-                    const result = await response.json(); // n8n에서 오는 응답이 JSON이라고 가정
+                    // const result = await response.json(); // n8n에서 오는 응답이 JSON이라고 가정
 
-                    if (result.status === 'success') { // n8n 응답에 status 필드가 있다고 가정
-                        alert(`${selectedIds.length}개 항목이 성공적으로 삭제 요청되었습니다.`);
-                    } else {
-                        alert(`삭제 요청 중 일부 문제가 발생했습니다: ${result.message || '알 수 없는 응답'}`);
-                    }
+                    // if (result.status === 'success') { // n8n 응답에 status 필드가 있다고 가정
+                    //     alert(`${selectedIds.length}개 항목이 성공적으로 삭제 요청되었습니다.`);
+                    // } else {
+                    //     alert(`삭제 요청 중 일부 문제가 발생했습니다: ${result.message || '알 수 없는 응답'}`);
+                    // }
                 } catch (error) {
                     console.error('삭제 처리 중 오류:', error);
                     alert(`오류가 발생하여 삭제에 실패했습니다: ${error.message}`);

@@ -210,9 +210,11 @@
                     console.error('삭제 처리 중 오류:', error);
                     alert(`오류가 발생하여 삭제에 실패했습니다: ${error.message}`);
                 } finally {
-                    loadingStatusEl.textContent = "데이터 로딩 중..."; // 기본 메시지로 변경하거나 숨김
+                    loadingStatusEl.textContent = "이력 업데이트 중..."; // 기본 메시지로 변경하거나 숨김
                     loadingStatusEl.style.display = 'none';
-                    location.reload(); // 작업 후 페이지 새로고침
+                    setTimeout(() => {
+                        location.reload(); // 0.3초 후에 페이지 새로고침
+                    }, 300); // 300 밀리초 = 0.3초
                 }
             });
         }
